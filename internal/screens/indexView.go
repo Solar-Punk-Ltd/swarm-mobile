@@ -7,16 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"math/big"
-	"strconv"
+	"runtime/debug"
 	"sync"
 	"time"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -24,26 +18,27 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/ethersphere/bee/pkg/logging"
+
+	beelite "github.com/Solar-Punk-Ltd/bee-lite"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethersphere/bee/pkg/swarm"
-	"github.com/onepeerlabs/bee-lite"
-	"github.com/sirupsen/logrus"
 )
 
 const (
-	TestnetChainID = 5 //testnet
-	MainnetChainID = 100
+	TestnetChainID   = 5 //testnet
+	MainnetChainID   = 100
+	MainnetNetworkID = uint64(1)
+	DefaultRPC       = "https://gnosis.publicnode.com"
 )
 
 var (
 	MainnetBootnodes = []string{
-		"/ip4/142.132.198.19/tcp/32225/p2p/16Uiu2HAmRPHcJupNaUivskPocWKwLmpV2ApXkawesPAaJXv67y4b",
-		"/ip4/142.132.208.116/tcp/32400/p2p/16Uiu2HAmJeGwCSzWo3mkRTsRd3fzxf7Fk1hkJ9dDkXmkxpjoNPmH",
-		"/ip4/142.132.198.150/tcp/32259/p2p/16Uiu2HAmCvdVXazhxwCJbnqBqkB7pot7o4RbggTZVN7VrUYinxBx",
+		"/dnsaddr/mainnet.ethswarm.org",
 	}
 
 	TestnetBootnodes = []string{
-		"/ip4/65.108.101.3/tcp/32000/p2p/16Uiu2HAmBRwS1SF79jEz8dDNfdqQvUXophexSbE5PDxLCxVEuB38",
+		"/dnsaddr/testnet.ethswarm.org",
 	}
 )
 
@@ -60,7 +55,6 @@ func (*logger) Log(s string) {
 
 type index struct {
 	fyne.Window
-
 	app          fyne.App
 	view         *fyne.Container
 	content      *fyne.Container
@@ -69,8 +63,9 @@ type index struct {
 	progress     dialog.Dialog
 	activeWindow string
 	mtx          sync.Mutex
-	b            *bee.Bee
+	bl           *beelite.Beelite
 	logger       *logger
+	beeVersion    string
 }
 
 type uploadedItem struct {
@@ -87,6 +82,18 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		app:    a,
 		logger: &logger{},
 	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		i.logger.Log("No build info found")
+		i.beeVersion = "unknown"
+	} else {
+		for _, dep := range info.Deps {
+			if dep.Path == "github.com/ethersphere/bee" {
+				i.beeVersion = dep.Version
+			}
+		}
+	}
+
 	path := a.Storage().RootURI().Path()
 	i.title = widget.NewLabel("Swarm")
 	i.intro = widget.NewLabel("Initialise your swarm node with a strong password")
@@ -122,7 +129,6 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		i.intro.SetText("Swarm mobile needs a rpc endpoint to start")
 		content.Objects = []fyne.CanvasObject{i.showRPCView(path, passwordEntry.Text)}
 		content.Refresh()
-		return
 	})
 	startButton.Importance = widget.HighImportance
 	content.Objects = []fyne.CanvasObject{container.NewBorder(passwordEntry, startButton, nil, nil)}
@@ -134,12 +140,12 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 
 func (i *index) showRPCView(path, password string) fyne.CanvasObject {
 	rpcEntry := widget.NewEntry()
-	rpcEntry.SetPlaceHolder("RPC Endpoint")
+	rpcEntry.SetPlaceHolder(fmt.Sprintf("RPC Endpoint (default: %s)", DefaultRPC))
 
 	startButton := widget.NewButton("Start", func() {
 		if rpcEntry.Text == "" {
-			i.showError(fmt.Errorf("rpc endpoint cannot be blank"))
-			return
+			rpcEntry.Text = DefaultRPC
+			i.logger.Log(fmt.Sprintf("RPC endpoint is blank, using default RPC: %s", DefaultRPC))
 		}
 		// test endpoint is connectable
 		eth, err := ethclient.Dial(rpcEntry.Text)
@@ -169,12 +175,11 @@ func (i *index) start(path, password, rpc string) {
 		return
 	}
 	i.showProgressWithMessage("Starting Bee")
-	// this runs on testnet
-	mainnet := false
-	err := i.initSwarm(path, path, "welcome from bee-lite", password, rpc, mainnet, logrus.ErrorLevel)
+
+	err := i.initSwarm(path, path, "Welcome from Swarm Mobile by Solar Punk", password, rpc)
 	i.hideProgress()
 	if err != nil {
-		addr, addrErr := bee.OverlayAddr(path, password)
+		addr, addrErr := beelite.OverlayAddr(path, password)
 		if addrErr != nil {
 			i.showError(addrErr)
 			return
@@ -192,70 +197,66 @@ func (i *index) start(path, password, rpc string) {
 	i.intro.SetText("")
 }
 
-func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, swapEndpoint string, mainnet bool, logLevel logrus.Level) error {
-	o := &bee.Options{
-		FullNodeMode:             true,
-		Keystore:                 keystore,
-		DataDir:                  dataDir,
-		Addr:                     ":6969",
-		WelcomeMessage:           welcomeMessage,
-		Bootnodes:                TestnetBootnodes,
-		Logger:                   logging.New(&logger{}, logLevel),
-		SwapEndpoint:             swapEndpoint,
-		SwapInitialDeposit:       "10000000000000000",
-		SwapEnable:               true,
-		WarmupTime:               0,
-		ChainID:                  TestnetChainID,
-		ChequebookEnable:         true,
-		ChainEnable:              true,
-		BlockTime:                uint64(5),
-		PaymentThreshold:         "100000000",
-		UsePostageSnapshot:       false,
-		Mainnet:                  true,
-		NetworkID:                10,
-		DBOpenFilesLimit:         50,
-		DBWriteBufferSize:        32 * 1024 * 1024,
-		DBDisableSeeksCompaction: false,
-		DBBlockCacheCapacity:     32 * 1024 * 1024,
-		RetrievalCaching:         true,
-	}
-	if mainnet {
-		o.ChainID = MainnetChainID
-		o.NetworkID = 1
-		o.Mainnet = mainnet
-		o.Bootnodes = MainnetBootnodes
+func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, rpc string) error {
+	i.logger.Log(welcomeMessage)
+	i.logger.Log(fmt.Sprintf("bee version: %s", i.beeVersion))
+
+	// TODO: dialog to choose between light and ultra light mode + settings
+	lo := &beelite.LiteOptions {
+		FullNodeMode:              false,
+		BootnodeMode:              false,
+		Bootnodes:                 MainnetBootnodes,
+		DataDir:                   dataDir,
+		WelcomeMessage:            welcomeMessage,
+		BlockchainRpcEndpoint:     rpc,
+		SwapInitialDeposit:        "0",
+		PaymentThreshold:          "100000000",
+		SwapEnable:                true,
+		ChequebookEnable:          true,
+		UsePostageSnapshot:        false,
+		DebugAPIEnable:            false,
+		Mainnet:                   true,
+		NetworkID:                 MainnetNetworkID,
+		NATAddr:                   "80.85.53.105:1634",
+		CacheCapacity:             32 * 1024 * 1024,
+		DBOpenFilesLimit:          50,
+		DBWriteBufferSize:         32 * 1024 * 1024,
+		DBBlockCacheCapacity:      32 * 1024 * 1024,
+		DBDisableSeeksCompaction:  false,
+		RetrievalCaching:          true,
 	}
 
-	b, err := bee.Start(o, password)
+	const debugLevel = "4"
+	bl, err := beelite.Start(lo, password, debugLevel)
 	if err != nil {
 		return err
 	}
+
 	i.app.Preferences().SetString("password", password)
-	i.b = b
+	i.bl = bl
 	return err
 }
 
 func (i *index) loadView() error {
 	addrCopyButton := widget.NewButtonWithIcon("   Copy   ", theme.ContentCopyIcon(), func() {
-		i.Window.Clipboard().SetContent(i.b.Addr().String())
+		i.Window.Clipboard().SetContent(shortenHashOrAddress(i.bl.OverlayEthAddress.String()))
 	})
-	addrHeader := container.NewHBox(widget.NewLabel("Overlay address :"))
+	addrHeader := container.NewHBox(widget.NewLabel("Overlay address:"))
 	addr := container.NewHBox(
-		widget.NewLabel(shortenHashOrAddress(i.b.Addr().String())),
+		widget.NewLabel(shortenHashOrAddress(i.bl.OverlayEthAddress.String())),
 		addrCopyButton,
 	)
 	addrContent := container.NewVBox(addrHeader, addr)
 
-	stampsHeader := container.NewHBox(widget.NewLabel("Postage stamps :"))
-	stampsContent := container.NewVBox()
-	stamps := i.b.GetAllBatches()
+	stampsHeader := container.NewHBox(widget.NewLabel("Postage stamps:"))
+	stamps := i.bl.GetAllBatches()
 	radio := widget.NewRadioGroup([]string{}, func(s string) {
 		if s == "" {
 			i.app.Preferences().SetString("selected_stamp", "")
 			i.app.Preferences().SetString("batch", "")
 			return
 		}
-		batches := i.b.GetAllBatches()
+		batches := i.bl.GetAllBatches()
 		for _, v := range batches {
 			stamp := hex.EncodeToString(v.ID())
 			if s[0:6] == stamp[0:6] {
@@ -265,48 +266,48 @@ func (i *index) loadView() error {
 		}
 	})
 	if len(stamps) == 0 {
-		// withdraw
-		chequebookBalance, err := i.b.ChequebookBalance()
-		if err != nil {
-			i.showError(err)
-			return err
-		}
-		i.showProgressWithMessage(fmt.Sprintf("withdrawing %s from chequebook", chequebookBalance.String()))
-		tx, err := i.b.ChequebookWithdraw(chequebookBalance)
-		if err != nil {
-			i.hideProgress()
-			i.showError(err)
-			return err
-		}
-		i.logger.Log(fmt.Sprintf("chequebook withdraw transaction : %s", tx.String()))
-		i.hideProgress()
-		i.showProgressWithMessage("buying stamp")
+	// 	// withdraw
+	// 	chequebookBalance, err := i.bl.ChequebookBalance()
+	// 	if err != nil {
+	// 		i.showError(err)
+	// 		return err
+	// 	}
+	// 	i.showProgressWithMessage(fmt.Sprintf("withdrawing %s from chequebook", chequebookBalance.String()))
+	// 	tx, err := i.bl.ChequebookWithdraw(chequebookBalance)
+	// 	if err != nil {
+	// 		i.hideProgress()
+	// 		i.showError(err)
+	// 		return err
+	// 	}
+	// 	i.logger.Log(fmt.Sprintf("chequebook withdraw transaction : %s", tx.String()))
+	// 	i.hideProgress()
+	// 	i.showProgressWithMessage(fmt.Sprintf("buying stamp, waiting for %s sec",(time.Second * 30).String()))
 
-		// just stand by
-		<-time.After(time.Second * 30)
+	// 	// just stand by
+	// 	<-time.After(time.Second * 30)
+	// 	// TODO: dialog for stamp buy options
+	// 	// buy stamp
+	// 	depthStr := "22"
+	// 	amountStr := "100000000"
+	// 	amount, ok := big.NewInt(0).SetString(amountStr, 10)
+	// 	if !ok {
+	// 		i.showError(fmt.Errorf("invalid amountStr"))
+	// 		return fmt.Errorf("invalid amountStr")
+	// 	}
+	// 	depth, err := strconv.ParseUint(depthStr, 10, 8)
+	// 	if err != nil {
+	// 		i.showError(fmt.Errorf("invalid depthStr %s", err.Error()))
+	// 		return err
+	// 	}
 
-		// buy stamp
-		depthStr := "22"
-		amountStr := "100000000"
-		amount, ok := big.NewInt(0).SetString(amountStr, 10)
-		if !ok {
-			i.showError(fmt.Errorf("invalid amountStr"))
-			return fmt.Errorf("invalid amountStr")
-		}
-		depth, err := strconv.ParseUint(depthStr, 10, 8)
-		if err != nil {
-			i.showError(fmt.Errorf("invalid depthStr %s", err.Error()))
-			return err
-		}
-
-		id, err := i.b.BuyStamp(amount, depth, "", false)
-		if err != nil {
-			i.hideProgress()
-			i.showError(err)
-			return err
-		}
-		i.hideProgress()
-		radio.Append(shortenHashOrAddress(hex.EncodeToString(id)))
+	// 	_, id, err := i.bl.BuyStamp(amount, depth, "", false)
+	// 	if err != nil {
+	// 		i.hideProgress()
+	// 		i.showError(err)
+	// 		return err
+	// 	}
+	// 	i.hideProgress()
+	// 	radio.Append(shortenHashOrAddress(hex.EncodeToString(id)))
 	} else {
 		selectedStamp := i.app.Preferences().String("selected_stamp")
 		for _, v := range stamps {
@@ -315,20 +316,19 @@ func (i *index) loadView() error {
 
 		radio.SetSelected(selectedStamp)
 	}
-	stampsContent = container.NewVBox(stampsHeader, radio)
+	stampsContent := container.NewVBox(stampsHeader, radio)
 
-	infoCard := widget.NewCard("Info", fmt.Sprintf("connected with %d peers", i.b.Topology().Connected), container.NewVBox(addrContent, stampsContent))
+	infoCard := widget.NewCard("Info", fmt.Sprintf("connected with %d peers", i.bl.TopologyDriver.Snapshot().Connected), container.NewVBox(addrContent, stampsContent))
 	go func() {
 		// auto reload
 		for {
-			select {
-			case <-time.After(time.Second * 5):
-				if i.b != nil {
-					infoCard.SetSubTitle(fmt.Sprintf("connected with %d peers", i.b.Topology().Connected))
-				}
+			time.Sleep(time.Second * 5)
+			if i.bl != nil {
+				infoCard.SetSubTitle(fmt.Sprintf("connected with %d peers", i.bl.TopologyDriver.Snapshot().Connected))
 			}
 		}
 	}()
+
 	filepath := ""
 	mimetype := ""
 	var pathBind = binding.BindString(&filepath)
@@ -346,7 +346,7 @@ func (i *index) loadView() error {
 				return
 			}
 			defer reader.Close()
-			data, err := ioutil.ReadAll(reader)
+			data, err := io.ReadAll(reader)
 			if err != nil {
 				i.showError(err)
 				return
@@ -384,7 +384,7 @@ func (i *index) loadView() error {
 				fmt.Sprintf("Uploading %s", path.Text), i)
 			i.progress.Show()
 
-			ref, err := i.b.AddFileBzz(context.Background(), batch, path.Text, mimetype, file)
+			ref, err := i.bl.AddFileBzz(context.Background(), batch, path.Text, mimetype, file)
 			if err != nil {
 				i.progress.Hide()
 				i.showError(err)
@@ -456,17 +456,16 @@ func (i *index) loadView() error {
 				return
 			}
 			go func() {
-				i.progress = dialog.NewProgressInfinite("",
-					fmt.Sprintf("Downloading %s", shortenHashOrAddress(hash.Text)), i)
+				i.progress = dialog.NewProgressInfinite("", fmt.Sprintf("Downloading %s", shortenHashOrAddress(hash.Text)), i)
 				i.progress.Show()
-				r, fileName, err := i.b.GetBzz(context.Background(), dlAddr)
+				ref, fileName, err := i.bl.GetBzz(context.Background(), dlAddr)
 				if err != nil {
 					i.progress.Hide()
 					i.showError(err)
 					return
 				}
 				hash.Text = ""
-				data, err := ioutil.ReadAll(r)
+				data, err := io.ReadAll(ref)
 				if err != nil {
 					i.progress.Hide()
 					i.showError(err)
@@ -568,5 +567,5 @@ func (i *index) showErrorWithAddr(addr common.Address, err error) {
 }
 
 func shortenHashOrAddress(item string) string {
-	return fmt.Sprintf("%s[...]%s", item[0:6], item[len(item)-6:len(item)])
+	return fmt.Sprintf("%s[...]%s", item[0:6], item[len(item)-6:])
 }

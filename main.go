@@ -3,11 +3,11 @@ package main
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"github.com/fairdatasociety/swarm-mobile/internal/screens"
+	"github.com/Solar-Punk-Ltd/swarm-mobile/internal/screens"
 )
 
 func main() {
-	a := app.NewWithID("com.plur.beemobile")
+	a := app.NewWithID("com.plur.swarmmobile")
 
 	w := a.NewWindow("Swarm Mobile")
 	w.SetMaster()
