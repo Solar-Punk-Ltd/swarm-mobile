@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"runtime/debug"
-	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -21,7 +21,6 @@ import (
 
 	beelite "github.com/Solar-Punk-Ltd/bee-lite"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethersphere/bee/pkg/swarm"
 )
 
@@ -29,7 +28,9 @@ const (
 	TestnetChainID   = 5 //testnet
 	MainnetChainID   = 100
 	MainnetNetworkID = uint64(1)
-	DefaultRPC       = "https://gnosis.publicnode.com"
+	defaultRPC       = "https://gnosis.publicnode.com"
+	defaultWelcomeMsg  = "Welcome from Swarm Mobile by Solar Punk"
+	debugLogLevel	   = "4"
 )
 
 var (
@@ -61,11 +62,10 @@ type index struct {
 	title        *widget.Label
 	intro        *widget.Label
 	progress     dialog.Dialog
-	activeWindow string
-	mtx          sync.Mutex
 	bl           *beelite.Beelite
 	logger       *logger
-	beeVersion    string
+	beeVersion   string
+	nodeConfig	 *nodeConfig
 }
 
 type uploadedItem struct {
@@ -81,6 +81,7 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		Window: w,
 		app:    a,
 		logger: &logger{},
+		nodeConfig: &nodeConfig{},
 	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -94,17 +95,23 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	path := a.Storage().RootURI().Path()
+	i.nodeConfig.path = a.Storage().RootURI().Path()
 	i.title = widget.NewLabel("Swarm")
 	i.intro = widget.NewLabel("Initialise your swarm node with a strong password")
 	i.intro.Wrapping = fyne.TextWrapWord
-	content := container.NewMax()
+	content := container.NewStack()
 
-	// check if password and endpoint is set
+	// check if any of the configuration is saved
 	savedPassword := i.app.Preferences().String("password")
-	savedSwapEndpoint := i.app.Preferences().String("SwapEndpoint")
-	if savedPassword != "" && savedSwapEndpoint != "" {
-		go i.start(path, savedPassword, savedSwapEndpoint)
+	savedRPCEndpoint := i.app.Preferences().String("rpcEndpoint")
+	savedNATAddr := i.app.Preferences().String("natAddress")
+	savedWelcomeMsg := i.app.Preferences().String("welcomeMessage")
+	savedSwapEnable := i.app.Preferences().Bool("swapEnabled")
+	if savedPassword != "" &&
+	   savedRPCEndpoint != "" &&
+	   savedNATAddr != "" &&
+	   savedWelcomeMsg != "" {
+		go i.start(i.nodeConfig.path, savedPassword, savedWelcomeMsg, savedNATAddr, savedRPCEndpoint, savedSwapEnable)
 		content.Objects = []fyne.CanvasObject{
 			container.NewBorder(
 				widget.NewLabel(""),
@@ -119,64 +126,20 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		return i.view
 	}
 
-	passwordEntry := widget.NewPasswordEntry()
-	passwordEntry.SetPlaceHolder("Password")
-	startButton := widget.NewButton("Next", func() {
-		if passwordEntry.Text == "" {
-			i.showError(fmt.Errorf("password cannot be blank"))
-			return
-		}
-		i.intro.SetText("Swarm mobile needs a rpc endpoint to start")
-		content.Objects = []fyne.CanvasObject{i.showRPCView(path, passwordEntry.Text)}
-		content.Refresh()
-	})
-	startButton.Importance = widget.HighImportance
-	content.Objects = []fyne.CanvasObject{container.NewBorder(passwordEntry, startButton, nil, nil)}
-	i.content = content
-	i.view = container.NewBorder(
-		container.NewVBox(i.title, widget.NewSeparator(), i.intro), nil, nil, nil, content)
+	i.showPasswordView()
+
+	i.view = container.NewBorder(container.NewVBox(i.title, widget.NewSeparator(), i.intro), nil, nil, nil, i.content)
 	return i.view
 }
 
-func (i *index) showRPCView(path, password string) fyne.CanvasObject {
-	rpcEntry := widget.NewEntry()
-	rpcEntry.SetPlaceHolder(fmt.Sprintf("RPC Endpoint (default: %s)", DefaultRPC))
-
-	startButton := widget.NewButton("Start", func() {
-		if rpcEntry.Text == "" {
-			rpcEntry.Text = DefaultRPC
-			i.logger.Log(fmt.Sprintf("RPC endpoint is blank, using default RPC: %s", DefaultRPC))
-		}
-		// test endpoint is connectable
-		eth, err := ethclient.Dial(rpcEntry.Text)
-		if err != nil {
-			i.logger.Log(fmt.Sprintf("rpc endpoint: %s", err.Error()))
-			i.showError(fmt.Errorf("rpc endpoint is invalid or not reachable"))
-			return
-		}
-
-		// check connection
-		_, err = eth.ChainID(context.Background())
-		if err != nil {
-			i.logger.Log(fmt.Sprintf("rpc endpoint: %s", err.Error()))
-			i.showError(fmt.Errorf("rpc endpoint: %s", err.Error()))
-			return
-		}
-		i.start(path, password, rpcEntry.Text)
-	})
-	startButton.Importance = widget.HighImportance
-
-	return container.NewBorder(rpcEntry, startButton, nil, nil)
-}
-
-func (i *index) start(path, password, rpc string) {
+func (i *index) start(path, password, welcomeMessage, natAdrress, rpcEndpoint string, swapEnabled bool) {
 	if password == "" {
 		i.showError(fmt.Errorf("password cannot be blank"))
 		return
 	}
 	i.showProgressWithMessage("Starting Bee")
 
-	err := i.initSwarm(path, path, "Welcome from Swarm Mobile by Solar Punk", password, rpc)
+	err := i.initSwarm(path, path, welcomeMessage, password, natAdrress, rpcEndpoint, swapEnabled)
 	i.hideProgress()
 	if err != nil {
 		addr, addrErr := beelite.OverlayAddr(path, password)
@@ -188,7 +151,10 @@ func (i *index) start(path, password, rpc string) {
 		return
 	}
 
-	i.app.Preferences().SetString("SwapEndpoint", rpc)
+	i.app.Preferences().SetString("welcomeMessage", welcomeMessage)
+	i.app.Preferences().SetBool("swapEnabled", swapEnabled)
+	i.app.Preferences().SetString("natAdrress", natAdrress)
+	i.app.Preferences().SetString("rpcEndpoint", rpcEndpoint)
 	err = i.loadView()
 	if err != nil {
 		i.showError(err)
@@ -197,27 +163,26 @@ func (i *index) start(path, password, rpc string) {
 	i.intro.SetText("")
 }
 
-func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, rpc string) error {
+func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, natAdrress, rpcEndpoint string, swapEnabled bool) error {
 	i.logger.Log(welcomeMessage)
 	i.logger.Log(fmt.Sprintf("bee version: %s", i.beeVersion))
 
-	// TODO: dialog to choose between light and ultra light mode + settings
 	lo := &beelite.LiteOptions {
 		FullNodeMode:              false,
 		BootnodeMode:              false,
 		Bootnodes:                 MainnetBootnodes,
 		DataDir:                   dataDir,
 		WelcomeMessage:            welcomeMessage,
-		BlockchainRpcEndpoint:     rpc,
+		BlockchainRpcEndpoint:     rpcEndpoint,
 		SwapInitialDeposit:        "0",
 		PaymentThreshold:          "100000000",
-		SwapEnable:                true,
+		SwapEnable:                swapEnabled,
 		ChequebookEnable:          true,
 		UsePostageSnapshot:        false,
 		DebugAPIEnable:            false,
 		Mainnet:                   true,
 		NetworkID:                 MainnetNetworkID,
-		NATAddr:                   "80.85.53.105:1634",
+		NATAddr:                   natAdrress,
 		CacheCapacity:             32 * 1024 * 1024,
 		DBOpenFilesLimit:          50,
 		DBWriteBufferSize:         32 * 1024 * 1024,
@@ -226,8 +191,7 @@ func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, rpc strin
 		RetrievalCaching:          true,
 	}
 
-	const debugLevel = "4"
-	bl, err := beelite.Start(lo, password, debugLevel)
+	bl, err := beelite.Start(lo, password, debugLogLevel)
 	if err != nil {
 		return err
 	}
@@ -239,11 +203,11 @@ func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, rpc strin
 
 func (i *index) loadView() error {
 	addrCopyButton := widget.NewButtonWithIcon("   Copy   ", theme.ContentCopyIcon(), func() {
-		i.Window.Clipboard().SetContent(shortenHashOrAddress(i.bl.OverlayEthAddress.String()))
+		i.Window.Clipboard().SetContent(i.bl.OverlayEthAddress.String())
 	})
 	addrHeader := container.NewHBox(widget.NewLabel("Overlay address:"))
 	addr := container.NewHBox(
-		widget.NewLabel(shortenHashOrAddress(i.bl.OverlayEthAddress.String())),
+		widget.NewLabel(i.bl.OverlayEthAddress.String()),
 		addrCopyButton,
 	)
 	addrContent := container.NewVBox(addrHeader, addr)
@@ -346,7 +310,7 @@ func (i *index) loadView() error {
 				return
 			}
 			defer reader.Close()
-			data, err := io.ReadAll(reader)
+			data, err := ioutil.ReadAll(reader)
 			if err != nil {
 				i.showError(err)
 				return
@@ -515,22 +479,22 @@ func (i *index) buyBatchDialog(depthStr, amountStr *string) fyne.CanvasObject {
 	optionsForm := widget.NewForm()
 	optionsForm.Append(
 		"Depth",
-		container.NewMax(depthSlider),
+		container.NewStack(depthSlider),
 	)
 
 	optionsForm.Append(
 		"Amount",
-		container.NewMax(amountEntry),
+		container.NewStack(amountEntry),
 	)
 
-	return container.NewMax(optionsForm)
+	return container.NewStack(optionsForm)
 }
 
 func (i *index) refDialog(ref string) fyne.CanvasObject {
 	refButton := widget.NewButtonWithIcon("   Copy    ", theme.ContentCopyIcon(), func() {
 		i.Window.Clipboard().SetContent(ref)
 	})
-	return container.NewMax(container.NewBorder(nil, nil, nil, refButton, widget.NewLabel(shortenHashOrAddress(ref))))
+	return container.NewStack(container.NewBorder(nil, nil, nil, refButton, widget.NewLabel(shortenHashOrAddress(ref))))
 }
 
 func (i *index) showProgressWithMessage(message string) {
