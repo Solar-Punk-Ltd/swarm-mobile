@@ -16,7 +16,7 @@ type nodeConfig struct {
 	password string
 	welcomeMessage string
 	swapEnabled bool
-	natAdrress string
+	natAddress string
 	rpcEndpoint string
 }
 
@@ -47,7 +47,7 @@ func (i *index) showWelcomeMessageView() fyne.CanvasObject {
 	i.intro.SetText("Set your welcome message for your swarm node (optional)")
 	content := container.NewStack()
 	welcomeMessageEntry := widget.NewEntry()
-	welcomeMessageEntry.SetPlaceHolder("Welcome Message")
+	welcomeMessageEntry.SetPlaceHolder(defaultWelcomeMsg)
 
 	nextButton := widget.NewButton("Next", func() {
 		if welcomeMessageEntry.Text == "" {
@@ -78,7 +78,7 @@ func (i *index) showWelcomeMessageView() fyne.CanvasObject {
 }
 
 func (i *index) showSWAPEnableView() fyne.CanvasObject {
-	i.intro.SetText("Choose the type of your node (Ultra-Light by default)")
+	i.intro.SetText("Choose the type of your node")
 	content := container.NewStack()
 	swapEnableRadio := widget.NewRadioGroup(
 		[]string{"Light", "Ultra-Light"},
@@ -91,9 +91,8 @@ func (i *index) showSWAPEnableView() fyne.CanvasObject {
 			i.logger.Log(fmt.Sprintf("Node mode selected: %s", mode))
 		},
 	)
-
-	swapEnableRadio.Selected = "Ultra-Light"
-
+	// default to ultra-light
+	swapEnableRadio.SetSelected("Ultra-Light")
 	nextButton := widget.NewButton("Next", func() {
 		i.logger.Log(fmt.Sprintf("SWAP enable: %t, running in %s mode", i.nodeConfig.swapEnabled, swapEnableRadio.Selected))
 		content.Objects = []fyne.CanvasObject{i.showNATAddressView()}
@@ -116,10 +115,10 @@ func (i *index) showSWAPEnableView() fyne.CanvasObject {
 }
 
 func (i *index) showNATAddressView() fyne.CanvasObject {
-	i.intro.SetText("Set your NAT Address for your swarm node (optional)")
+	i.intro.SetText("Set the NAT Address of your swarm node (optional)")
 	content := container.NewStack()
 	natAdrrEntry := widget.NewEntry()
-	natAdrrEntry.SetPlaceHolder("NAT Address")
+	natAdrrEntry.SetPlaceHolder("89.134.15.12:1634")
 
 	nextButton := widget.NewButton("Next", func() {
 		if natAdrrEntry.Text == "" {
@@ -127,13 +126,13 @@ func (i *index) showNATAddressView() fyne.CanvasObject {
 		} else {
 			i.logger.Log(fmt.Sprintf("Using NAT address: %s", natAdrrEntry.Text))
 		}
-		i.nodeConfig.natAdrress = natAdrrEntry.Text
+		i.nodeConfig.natAddress = natAdrrEntry.Text
 		content.Objects = []fyne.CanvasObject{i.showRPCView()}
 		content.Refresh()
 	})
 
 	backButton := widget.NewButton("Back", func() {
-		i.nodeConfig.natAdrress = ""
+		i.nodeConfig.natAddress = ""
 		content.Objects = []fyne.CanvasObject{i.showSWAPEnableView()}
 		content.Refresh()
 	})
@@ -151,7 +150,7 @@ func (i *index) showRPCView() fyne.CanvasObject {
 	i.intro.SetText("Swarm mobile needs a RPC endpoint to start (optional)")
 	content := container.NewStack()
 	rpcEntry := widget.NewEntry()
-	rpcEntry.SetPlaceHolder(fmt.Sprintf("RPC Endpoint (default: %s)", defaultRPC))
+	rpcEntry.SetPlaceHolder(fmt.Sprintf("RPC Endpoint (%s)", defaultRPC))
 
 	nextButton := widget.NewButton("Next", func() {
 		if rpcEntry.Text == "" {
@@ -194,6 +193,7 @@ func (i *index) showRPCView() fyne.CanvasObject {
 
 func (i *index) showStartView() fyne.CanvasObject {
 	i.intro.SetText("Start your Swarm node")
+	i.intro.TextStyle.Bold = true
 	content := container.NewStack()
 
 	startButton := widget.NewButton("Start", func() {
@@ -207,7 +207,7 @@ func (i *index) showStartView() fyne.CanvasObject {
 		i.start(i.nodeConfig.path,
 				i.nodeConfig.password,
 				i.nodeConfig.welcomeMessage,
-				i.nodeConfig.natAdrress,
+				i.nodeConfig.natAddress,
 				i.nodeConfig.rpcEndpoint,
 				i.nodeConfig.swapEnabled)
 		content.Refresh()

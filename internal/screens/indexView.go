@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
+	"math/big"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -21,16 +22,19 @@ import (
 
 	beelite "github.com/Solar-Punk-Ltd/bee-lite"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethersphere/bee/pkg/api"
 	"github.com/ethersphere/bee/pkg/swarm"
 )
 
 const (
-	TestnetChainID   = 5 //testnet
-	MainnetChainID   = 100
-	MainnetNetworkID = uint64(1)
-	defaultRPC       = "https://gnosis.publicnode.com"
-	defaultWelcomeMsg  = "Welcome from Swarm Mobile by Solar Punk"
-	debugLogLevel	   = "4"
+	TestnetChainID    = 5 //testnet
+	MainnetChainID    = 100
+	MainnetNetworkID  = uint64(1)
+	defaultRPC        = "https://gnosis.publicnode.com"
+	defaultWelcomeMsg = "Welcome from Swarm Mobile by Solar Punk"
+	debugLogLevel	  = "4"
+	defaultDepth      = "17"
+	defaultAmount     = "100000000"
 )
 
 var (
@@ -97,6 +101,7 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 
 	i.nodeConfig.path = a.Storage().RootURI().Path()
 	i.title = widget.NewLabel("Swarm")
+	i.title.TextStyle.Bold = true
 	i.intro = widget.NewLabel("Initialise your swarm node with a strong password")
 	i.intro.Wrapping = fyne.TextWrapWord
 	content := container.NewStack()
@@ -132,14 +137,14 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 	return i.view
 }
 
-func (i *index) start(path, password, welcomeMessage, natAdrress, rpcEndpoint string, swapEnabled bool) {
+func (i *index) start(path, password, welcomeMessage, natAddress, rpcEndpoint string, swapEnabled bool) {
 	if password == "" {
 		i.showError(fmt.Errorf("password cannot be blank"))
 		return
 	}
 	i.showProgressWithMessage("Starting Bee")
 
-	err := i.initSwarm(path, path, welcomeMessage, password, natAdrress, rpcEndpoint, swapEnabled)
+	err := i.initSwarm(path, path, welcomeMessage, password, natAddress, rpcEndpoint, swapEnabled)
 	i.hideProgress()
 	if err != nil {
 		addr, addrErr := beelite.OverlayAddr(path, password)
@@ -151,9 +156,19 @@ func (i *index) start(path, password, welcomeMessage, natAdrress, rpcEndpoint st
 		return
 	}
 
+	if swapEnabled {
+		if i.bl.BeeNodeMode != api.LightMode {
+			i.showError(fmt.Errorf("swap is enabled but the current node mode is: %s", i.bl.BeeNodeMode))
+			return
+		}
+	} else if i.bl.BeeNodeMode != api.UltraLightMode {
+		i.showError(fmt.Errorf("swap disabled but the current node mode is: %s", i.bl.BeeNodeMode))
+		return
+	}
+
 	i.app.Preferences().SetString("welcomeMessage", welcomeMessage)
 	i.app.Preferences().SetBool("swapEnabled", swapEnabled)
-	i.app.Preferences().SetString("natAdrress", natAdrress)
+	i.app.Preferences().SetString("natAddress", natAddress)
 	i.app.Preferences().SetString("rpcEndpoint", rpcEndpoint)
 	err = i.loadView()
 	if err != nil {
@@ -163,7 +178,7 @@ func (i *index) start(path, password, welcomeMessage, natAdrress, rpcEndpoint st
 	i.intro.SetText("")
 }
 
-func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, natAdrress, rpcEndpoint string, swapEnabled bool) error {
+func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, natAddress, rpcEndpoint string, swapEnabled bool) error {
 	i.logger.Log(welcomeMessage)
 	i.logger.Log(fmt.Sprintf("bee version: %s", i.beeVersion))
 
@@ -179,10 +194,10 @@ func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, natAdrres
 		SwapEnable:                swapEnabled,
 		ChequebookEnable:          true,
 		UsePostageSnapshot:        false,
-		DebugAPIEnable:            false,
+		DebugAPIEnable:            true,
 		Mainnet:                   true,
 		NetworkID:                 MainnetNetworkID,
-		NATAddr:                   natAdrress,
+		NATAddr:                   natAddress,
 		CacheCapacity:             32 * 1024 * 1024,
 		DBOpenFilesLimit:          50,
 		DBWriteBufferSize:         32 * 1024 * 1024,
@@ -214,7 +229,7 @@ func (i *index) loadView() error {
 
 	stampsHeader := container.NewHBox(widget.NewLabel("Postage stamps:"))
 	stamps := i.bl.GetAllBatches()
-	radio := widget.NewRadioGroup([]string{}, func(s string) {
+	batchRadio := widget.NewRadioGroup([]string{}, func(s string) {
 		if s == "" {
 			i.app.Preferences().SetString("selected_stamp", "")
 			i.app.Preferences().SetString("batch", "")
@@ -229,66 +244,89 @@ func (i *index) loadView() error {
 			}
 		}
 	})
-	if len(stamps) == 0 {
-	// 	// withdraw
-	// 	chequebookBalance, err := i.bl.ChequebookBalance()
-	// 	if err != nil {
-	// 		i.showError(err)
-	// 		return err
-	// 	}
-	// 	i.showProgressWithMessage(fmt.Sprintf("withdrawing %s from chequebook", chequebookBalance.String()))
-	// 	tx, err := i.bl.ChequebookWithdraw(chequebookBalance)
-	// 	if err != nil {
-	// 		i.hideProgress()
-	// 		i.showError(err)
-	// 		return err
-	// 	}
-	// 	i.logger.Log(fmt.Sprintf("chequebook withdraw transaction : %s", tx.String()))
-	// 	i.hideProgress()
-	// 	i.showProgressWithMessage(fmt.Sprintf("buying stamp, waiting for %s sec",(time.Second * 30).String()))
 
-	// 	// just stand by
-	// 	<-time.After(time.Second * 30)
-	// 	// TODO: dialog for stamp buy options
-	// 	// buy stamp
-	// 	depthStr := "22"
-	// 	amountStr := "100000000"
-	// 	amount, ok := big.NewInt(0).SetString(amountStr, 10)
-	// 	if !ok {
-	// 		i.showError(fmt.Errorf("invalid amountStr"))
-	// 		return fmt.Errorf("invalid amountStr")
-	// 	}
-	// 	depth, err := strconv.ParseUint(depthStr, 10, 8)
-	// 	if err != nil {
-	// 		i.showError(fmt.Errorf("invalid depthStr %s", err.Error()))
-	// 		return err
-	// 	}
+	buyBatchButton := widget.NewButton("Buy a postage batch", func() {
+		child := i.app.NewWindow("Buying a postage batch")
+		// buy stamp
+		depthStr := defaultDepth
+		amountStr := defaultAmount
+		content := container.NewStack()
+		buyBatchContent := i.buyBatchDialog(&depthStr,&amountStr)
+		size := child.Canvas().Content().MinSize()
+		if size.Width < 200{
+			size.Width = 200
+		}
+		if size.Height < 100 {
+			size.Height = 100
+		}
+		child.Resize(size)
 
-	// 	_, id, err := i.bl.BuyStamp(amount, depth, "", false)
-	// 	if err != nil {
-	// 		i.hideProgress()
-	// 		i.showError(err)
-	// 		return err
-	// 	}
-	// 	i.hideProgress()
-	// 	radio.Append(shortenHashOrAddress(hex.EncodeToString(id)))
-	} else {
+		buyButton := widget.NewButton("Buy", func() {
+			amount, ok := big.NewInt(0).SetString(amountStr, 10)
+			if !ok {
+				i.showError(fmt.Errorf("invalid amountStr"))
+				return
+			}
+			depth, err := strconv.ParseUint(depthStr, 10, 8)
+			if err != nil {
+				i.showError(fmt.Errorf("invalid depthStr %s", err.Error()))
+				return
+			}
+
+			i.showProgressWithMessage(fmt.Sprintf("Buying a postage batch (depth %s, amount %s)", depthStr, amountStr))
+			_, id, err := i.bl.BuyStamp(amount, depth, "", false)
+			// just stand by
+			<-time.After(time.Second * 30)
+			if err != nil {
+				i.hideProgress()
+				i.showError(err)
+				return
+			}
+			i.hideProgress()
+			batchRadio.Append(shortenHashOrAddress(hex.EncodeToString(id)))
+		})
+
+		content.Objects = []fyne.CanvasObject{container.NewBorder(buyBatchContent, container.NewVBox(buyButton), nil, nil)}
+		child.SetContent(content)
+		child.Show()
+	})
+
+	if len(stamps) != 0 {
 		selectedStamp := i.app.Preferences().String("selected_stamp")
 		for _, v := range stamps {
-			radio.Append(shortenHashOrAddress(hex.EncodeToString(v.ID())))
+			batchRadio.Append(shortenHashOrAddress(hex.EncodeToString(v.ID())))
 		}
 
-		radio.SetSelected(selectedStamp)
+		batchRadio.SetSelected(selectedStamp)
 	}
-	stampsContent := container.NewVBox(stampsHeader, radio)
+	stampsContent := container.NewVBox(stampsHeader, batchRadio)
 
-	infoCard := widget.NewCard("Info", fmt.Sprintf("connected with %d peers", i.bl.TopologyDriver.Snapshot().Connected), container.NewVBox(addrContent, stampsContent))
+	balanceHeader := container.NewHBox(widget.NewLabel("Chequebook balance:"))
+	chequebookBalance, err := i.bl.ChequebookBalance()
+	if err != nil {
+		i.showError(err)
+		return err
+	}
+	balanceStr := chequebookBalance.String()
+	balanceBind := binding.BindString(&balanceStr)
+	balance := container.NewHBox(widget.NewLabel(balanceStr))
+	balanceContent := container.NewVBox(balanceHeader, balance)
+
+	infoCard := widget.NewCard("Info",
+				fmt.Sprintf("Connected with %d peers", i.bl.TopologyDriver.Snapshot().Connected),
+				container.NewVBox(addrContent, balanceContent, stampsContent, buyBatchButton))
 	go func() {
 		// auto reload
 		for {
 			time.Sleep(time.Second * 5)
 			if i.bl != nil {
-				infoCard.SetSubTitle(fmt.Sprintf("connected with %d peers", i.bl.TopologyDriver.Snapshot().Connected))
+				infoCard.SetSubTitle(fmt.Sprintf("Connected with %d peers", i.bl.TopologyDriver.Snapshot().Connected))
+				chequebookBalance, err = i.bl.ChequebookBalance()
+				if err != nil {
+					balanceBind.Set(err.Error())
+				} else {
+					balanceBind.Set(chequebookBalance.String())
+				}
 			}
 		}
 	}()
@@ -310,7 +348,7 @@ func (i *index) loadView() error {
 				return
 			}
 			defer reader.Close()
-			data, err := ioutil.ReadAll(reader)
+			data, err := io.ReadAll(reader)
 			if err != nil {
 				i.showError(err)
 				return
@@ -339,16 +377,17 @@ func (i *index) loadView() error {
 				i.showError(fmt.Errorf("please select a file"))
 				return
 			}
-			batch := i.app.Preferences().String("batch")
-			if batch == "" {
+			batchID := i.app.Preferences().String("batch")
+			if batchID == "" {
 				i.showError(fmt.Errorf("please select a batch of stamp"))
 				return
 			}
-			i.progress = dialog.NewProgressInfinite("",
-				fmt.Sprintf("Uploading %s", path.Text), i)
+			i.progress = dialog.NewProgressInfinite("",fmt.Sprintf("Uploading %s", path.Text), i)
 			i.progress.Show()
 
-			ref, err := i.bl.AddFileBzz(context.Background(), batch, path.Text, mimetype, file)
+			ref, err := i.bl.AddFileBzz(context.Background(), batchID, path.Text, mimetype, file)
+			// just stand by
+			<-time.After(time.Second * 60)
 			if err != nil {
 				i.progress.Hide()
 				i.showError(err)
@@ -400,8 +439,18 @@ func (i *index) loadView() error {
 				uploadedContent.Add(item)
 			}
 		}
+		if len(uploads) == 0 {
+			uploadedContent.Add(widget.NewLabel("Empty upload list"))
+		}
 		child := i.app.NewWindow("Uploaded content")
-		child.FixedSize()
+		size := child.Canvas().Content().MinSize()
+		if size.Width < 200{
+			size.Width =200
+		}
+		if size.Height < 100 {
+			size.Height = 100
+		}
+		child.Resize(size)
 		child.SetContent(uploadedContentWrapper)
 		child.Show()
 	})
@@ -458,7 +507,13 @@ func (i *index) loadView() error {
 		},
 	}
 	downloadCard := widget.NewCard("Download", "download content from swarm", dlForm)
-	i.content.Objects = []fyne.CanvasObject{container.NewBorder(nil, nil, nil, nil, container.NewScroll(container.NewGridWithColumns(1, infoCard, uploadCard, downloadCard)))}
+	i.content.Objects = []fyne.CanvasObject{container.NewBorder(
+		nil,
+		nil,
+		nil,
+		nil,
+		container.NewScroll(container.NewGridWithColumns(1, infoCard, uploadCard, downloadCard))),
+	}
 	i.content.Refresh()
 	return nil
 }
@@ -469,17 +524,19 @@ func (i *index) buyBatchDialog(depthStr, amountStr *string) fyne.CanvasObject {
 	amountBind := binding.BindString(amountStr)
 
 	amountEntry := widget.NewEntryWithData(amountBind)
+	amountEntry.OnChanged = func(s string) {
+		amountBind.Set(s)
+	}
 
-	depthSlider := widget.NewSlider(float64(18), float64(30))
-	depthSlider.Step = 2.0
-	depthSlider.OnChanged = func(f float64) {
-		depthBind.Set(fmt.Sprintf("%d", int64(f)))
+	depthEntry := widget.NewEntryWithData(depthBind)
+	depthEntry.OnChanged = func(s string) {
+		depthBind.Set(s)
 	}
 
 	optionsForm := widget.NewForm()
 	optionsForm.Append(
 		"Depth",
-		container.NewStack(depthSlider),
+		container.NewStack(depthEntry),
 	)
 
 	optionsForm.Append(
