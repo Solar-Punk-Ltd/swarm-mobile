@@ -9,18 +9,20 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethersphere/bee/pkg/api"
 )
 
 type nodeConfig struct {
 	path string
 	password string
 	welcomeMessage string
-	swapEnabled bool
+	swapEnable bool
 	natAddress string
 	rpcEndpoint string
 }
 
 func (i *index) showPasswordView() fyne.CanvasObject {
+	i.intro.SetText("Initialise your swarm node with a strong password")
 	content := container.NewStack()
 	passwordEntry := widget.NewPasswordEntry()
 	passwordEntry.SetPlaceHolder("Password")
@@ -81,26 +83,31 @@ func (i *index) showSWAPEnableView() fyne.CanvasObject {
 	i.intro.SetText("Choose the type of your node")
 	content := container.NewStack()
 	swapEnableRadio := widget.NewRadioGroup(
-		[]string{"Light", "Ultra-Light"},
+		[]string{api.LightMode.String(), api.UltraLightMode.String()},
 		func(mode string) {
 			if mode == "Light" {
-				i.nodeConfig.swapEnabled = true
+				i.nodeConfig.swapEnable = true
 			} else {
-				i.nodeConfig.swapEnabled = false
+				i.nodeConfig.swapEnable = false
 			}
 			i.logger.Log(fmt.Sprintf("Node mode selected: %s", mode))
 		},
 	)
 	// default to ultra-light
-	swapEnableRadio.SetSelected("Ultra-Light")
+	swapEnableRadio.SetSelected(api.UltraLightMode.String())
 	nextButton := widget.NewButton("Next", func() {
-		i.logger.Log(fmt.Sprintf("SWAP enable: %t, running in %s mode", i.nodeConfig.swapEnabled, swapEnableRadio.Selected))
+		if swapEnableRadio.Selected == "" {
+			i.showError(fmt.Errorf("please select the node mode"))
+			return
+		}
+
+		i.logger.Log(fmt.Sprintf("SWAP enable: %t, running in %s mode", i.nodeConfig.swapEnable, swapEnableRadio.Selected))
 		content.Objects = []fyne.CanvasObject{i.showNATAddressView()}
 		content.Refresh()
 	})
 
 	backButton := widget.NewButton("Back", func() {
-		i.nodeConfig.swapEnabled = false
+		i.nodeConfig.swapEnable = false
 		content.Objects = []fyne.CanvasObject{i.showWelcomeMessageView()}
 		content.Refresh()
 	})
@@ -118,8 +125,7 @@ func (i *index) showNATAddressView() fyne.CanvasObject {
 	i.intro.SetText("Set the NAT Address of your swarm node (optional)")
 	content := container.NewStack()
 	natAdrrEntry := widget.NewEntry()
-	natAdrrEntry.SetPlaceHolder("89.134.15.12:1634")
-
+	natAdrrEntry.SetPlaceHolder("123.123.123.123:1634")
 	nextButton := widget.NewButton("Next", func() {
 		if natAdrrEntry.Text == "" {
 			i.logger.Log("NAT address is blank")
@@ -127,7 +133,14 @@ func (i *index) showNATAddressView() fyne.CanvasObject {
 			i.logger.Log(fmt.Sprintf("Using NAT address: %s", natAdrrEntry.Text))
 		}
 		i.nodeConfig.natAddress = natAdrrEntry.Text
-		content.Objects = []fyne.CanvasObject{i.showRPCView()}
+
+		// in ultra-light mode no RPC endpoint is necessary
+		if i.nodeConfig.swapEnable {
+			content.Objects = []fyne.CanvasObject{i.showRPCView()}
+		} else {
+			content.Objects = []fyne.CanvasObject{i.showStartView()}
+		}
+
 		content.Refresh()
 	})
 
@@ -153,25 +166,27 @@ func (i *index) showRPCView() fyne.CanvasObject {
 	rpcEntry.SetPlaceHolder(fmt.Sprintf("RPC Endpoint (%s)", defaultRPC))
 
 	nextButton := widget.NewButton("Next", func() {
-		if rpcEntry.Text == "" {
-			rpcEntry.Text = defaultRPC
-			i.logger.Log(fmt.Sprintf("RPC endpoint is blank, using default RPC: %s", defaultRPC))
+		if i.nodeConfig.swapEnable {
+			if rpcEntry.Text == "" {
+				rpcEntry.Text = defaultRPC
+				i.logger.Log(fmt.Sprintf("RPC endpoint is blank, using default RPC: %s", defaultRPC))
+			}
+			// test endpoint is connectable
+			eth, err := ethclient.Dial(rpcEntry.Text)
+			if err != nil {
+				i.logger.Log(fmt.Sprintf("rpc endpoint: %s", err.Error()))
+				i.showError(fmt.Errorf("rpc endpoint is invalid or not reachable"))
+				return
+			}
+			// check connections
+			_, err = eth.ChainID(context.Background())
+			if err != nil {
+				i.logger.Log(fmt.Sprintf("rpc endpoint: %s", err.Error()))
+				i.showError(fmt.Errorf("rpc endpoint: %s", err.Error()))
+				return
+			}
+			i.nodeConfig.rpcEndpoint = rpcEntry.Text
 		}
-		// test endpoint is connectable
-		eth, err := ethclient.Dial(rpcEntry.Text)
-		if err != nil {
-			i.logger.Log(fmt.Sprintf("rpc endpoint: %s", err.Error()))
-			i.showError(fmt.Errorf("rpc endpoint is invalid or not reachable"))
-			return
-		}
-		// check connections
-		_, err = eth.ChainID(context.Background())
-		if err != nil {
-			i.logger.Log(fmt.Sprintf("rpc endpoint: %s", err.Error()))
-			i.showError(fmt.Errorf("rpc endpoint: %s", err.Error()))
-			return
-		}
-		i.nodeConfig.rpcEndpoint = rpcEntry.Text
 		content.Objects = []fyne.CanvasObject{i.showStartView()}
 		content.Refresh()
 	})
@@ -199,7 +214,8 @@ func (i *index) showStartView() fyne.CanvasObject {
 	startButton := widget.NewButton("Start", func() {
 		if i.nodeConfig.path == "" ||
 			i.nodeConfig.password == "" ||
-			i.nodeConfig.rpcEndpoint == "" {
+			(i.nodeConfig.swapEnable && i.nodeConfig.rpcEndpoint == "" ) ||
+			(!i.nodeConfig.swapEnable && i.nodeConfig.rpcEndpoint != "" ) {
 				i.showError(fmt.Errorf("missing required config field(s)"))
 			return
 		}
@@ -209,12 +225,16 @@ func (i *index) showStartView() fyne.CanvasObject {
 				i.nodeConfig.welcomeMessage,
 				i.nodeConfig.natAddress,
 				i.nodeConfig.rpcEndpoint,
-				i.nodeConfig.swapEnabled)
+				i.nodeConfig.swapEnable)
 		content.Refresh()
 	})
 
 	backButton := widget.NewButton("Back", func() {
-		content.Objects = []fyne.CanvasObject{i.showRPCView()}
+		if i.nodeConfig.swapEnable {
+			content.Objects = []fyne.CanvasObject{i.showRPCView()}
+		} else {
+			content.Objects = []fyne.CanvasObject{i.showNATAddressView()}
+		}
 		content.Refresh()
 	})
 	backButton.Importance = widget.WarningImportance
