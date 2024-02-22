@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -20,23 +19,20 @@ type uploadedItem struct {
 	Name      string
 	Reference string
 	Size      int64
-	Timestamp int64
+	Timestamp time.Time
 	Mimetype  string
 }
 
-func (i *index) showUploadCard(showUpload bool) *widget.Card {
+func (i *index) showUploadCard() *widget.Card {
 	upForm := i.uploadForm()
 	listButton := i.listUploadsButton(fyne.NewSize(200, 100))
-
-	uploadCard := widget.NewCard("Upload", "upload content into swarm", container.NewVBox(upForm, listButton))
-	uploadCard.Hidden = !showUpload
-
-	return uploadCard
+	return widget.NewCard("Upload", "upload content into swarm", container.NewVBox(upForm, listButton))
 }
 
 func (i *index) uploadForm() *widget.Form {
 	filepath := ""
 	mimetype := ""
+	fileSize := int64(0)
 	var pathBind = binding.BindString(&filepath)
 	path := widget.NewEntry()
 	path.Bind(pathBind)
@@ -57,11 +53,14 @@ func (i *index) uploadForm() *widget.Form {
 				i.showError(err)
 				return
 			}
-
+			fileSize = int64(len(data))
 			mimetype = reader.URI().MimeType()
-			pathBind.Set(reader.URI().Name())
+			err = pathBind.Set(reader.URI().Name())
+			if err != nil {
+				i.showError(err)
+				return
+			}
 			file = bytes.NewReader(data)
-			data = nil
 		}, i.Window)
 		fd.Show()
 	})
@@ -75,30 +74,32 @@ func (i *index) uploadForm() *widget.Form {
 	upForm.OnSubmit = func() {
 		go func() {
 			defer func() {
-				pathBind.Set("")
+				err := pathBind.Set("")
+				if err != nil {
+					i.logger.Log(fmt.Sprintf("failed to bind path: %s", err.Error()))
+				}
 				file = nil
 			}()
 			if file == nil {
 				i.showError(fmt.Errorf("please select a file"))
 				return
 			}
-			batchID := i.app.Preferences().String(batchPrefKey)
+			batchID := i.getPreferenceString(batchPrefKey)
 			if batchID == "" {
 				i.showError(fmt.Errorf("please select a batch of stamp"))
 				return
 			}
-			i.showProgressWithMessage(fmt.Sprintf("Uploading %s", path.Text))
-
-			ref, err := i.bl.AddFileBzz(context.Background(), batchID, path.Text, mimetype, file)
-			// just stand by
-			<-time.After(time.Second * 120)
+			filename := path.Text
+			i.logger.Log(fmt.Sprintf("stamp selected: %s", batchID))
+			i.showProgressWithMessage(fmt.Sprintf("Uploading %s", filename))
+			ref, err := i.bl.AddFileBzz(context.Background(), batchID, filename, mimetype, false, file)
 			if err != nil {
 				i.hideProgress()
 				i.showError(err)
 				return
 			}
-			filename := path.Text
-			uploadedSrt := i.app.Preferences().String(uploadsPrefKey)
+			i.logger.Log(fmt.Sprintf("reference of the uploaded file: %s", ref.String()))
+			uploadedSrt := i.getPreferenceString(uploadsPrefKey)
 			uploads := []uploadedItem{}
 			if uploadedSrt != "" {
 				err := json.Unmarshal([]byte(uploadedSrt), &uploads)
@@ -109,6 +110,9 @@ func (i *index) uploadForm() *widget.Form {
 			uploads = append(uploads, uploadedItem{
 				Name:      filename,
 				Reference: ref.String(),
+				Timestamp: time.Now(),
+				Size:      fileSize,
+				Mimetype:  mimetype,
 			})
 			data, err := json.Marshal(uploads)
 			if err != nil {
@@ -116,7 +120,7 @@ func (i *index) uploadForm() *widget.Form {
 				i.showError(err)
 				return
 			}
-			i.app.Preferences().SetString(uploadsPrefKey, string(data))
+			i.setPreference(uploadsPrefKey, string(data))
 			d := dialog.NewCustomConfirm("Upload successful", "Ok", "Cancel", i.refDialog(ref.String()), func(b bool) {}, i.Window)
 			i.hideProgress()
 			d.Show()
@@ -130,7 +134,7 @@ func (i *index) listUploadsButton(minSize fyne.Size) *widget.Button {
 	button := widget.NewButton("All Uploads", func() {
 		uploadedContent := container.NewVBox()
 		uploadedContentWrapper := container.NewScroll(uploadedContent)
-		uploadedSrt := i.app.Preferences().String(uploadsPrefKey)
+		uploadedSrt := i.getPreferenceString(uploadsPrefKey)
 		uploads := []uploadedItem{}
 		if uploadedSrt != "" {
 			err := json.Unmarshal([]byte(uploadedSrt), &uploads)
@@ -140,11 +144,9 @@ func (i *index) listUploadsButton(minSize fyne.Size) *widget.Button {
 			for _, v := range uploads {
 				ref := v.Reference
 				name := v.Name
-				label := widget.NewLabel(name)
+				label := widget.NewLabel(fmt.Sprintf("%s\n%s", name, shortenHashOrAddress(ref)))
 				label.Wrapping = fyne.TextWrapWord
-				item := container.NewBorder(label, nil, nil, widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
-					i.Window.Clipboard().SetContent(ref)
-				}))
+				item := container.NewBorder(label, nil, nil, i.copyButton(ref))
 				uploadedContent.Add(item)
 			}
 		}
@@ -154,8 +156,8 @@ func (i *index) listUploadsButton(minSize fyne.Size) *widget.Button {
 		}
 
 		child := i.app.NewWindow("Uploaded content")
-		size := child.Canvas().Content().MinSize()
-		if size.Width < minSize.Width{
+		size := child.Canvas().Content().Size()
+		if size.Width < minSize.Width {
 			size.Width = minSize.Width
 		}
 		if size.Height < minSize.Height {

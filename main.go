@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	a := app.NewWithID("com.plur.swarmmobile")
+	a := app.NewWithID("com.solarpunk.swarmmobile")
 
 	w := a.NewWindow("Swarm Mobile")
 	w.SetMaster()
@@ -20,7 +20,6 @@ func main() {
 	w.ShowAndRun()
 	tidyUp("Window Closed")
 }
-
 
 func tidyUp(msg string) {
 	fmt.Printf("Swarm Mobile Exited: %s\n", msg)

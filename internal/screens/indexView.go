@@ -15,15 +15,17 @@ import (
 )
 
 const (
-	TestnetChainID    = 5 //testnet
-	MainnetChainID    = 100
-	MainnetNetworkID  = uint64(1)
-	defaultRPC        = "https://gnosis.publicnode.com"
-	defaultWelcomeMsg = "Welcome from Swarm Mobile by Solar Punk"
-	debugLogLevel     = "4"
-	defaultDepth      = "17"
-	defaultAmount     = "100000000"
-	passwordPrefKey   = "password"
+	TestnetChainID        = 5 //testnet
+	MainnetChainID        = 100
+	MainnetNetworkID      = uint64(1)
+	NativeTokenSymbol     = "xDAI"
+	SwarmTokenSymbol      = "xBZZ"
+	defaultRPC            = "https://gnosis.publicnode.com"
+	defaultWelcomeMsg     = "Welcome from Swarm Mobile by Solar Punk"
+	debugLogLevel         = "4"
+	defaultDepth          = "17"
+	defaultAmount         = "100000000"
+	passwordPrefKey       = "password"
 	welcomeMessagePrefKey = "welcomeMessage"
 	swapEnablePrefKey     = "swapEnable"
 	natAddressPrefKey     = "natAddress"
@@ -31,6 +33,7 @@ const (
 	selectedStampPrefKey  = "selected_stamp"
 	batchPrefKey          = "batch"
 	uploadsPrefKey        = "uploads"
+	overlayAddrPrefKey    = "overlayAddress"
 )
 
 var (
@@ -56,25 +59,27 @@ func (*logger) Log(s string) {
 
 type index struct {
 	fyne.Window
-	app          fyne.App
-	view         *fyne.Container
-	content      *fyne.Container
-	title        *widget.Label
-	intro        *widget.Label
-	progress     dialog.Dialog
-	bl           *beelite.Beelite
-	logger       *logger
-	beeVersion   string
-	nodeConfig	 *nodeConfig
+	app        fyne.App
+	view       *fyne.Container
+	content    *fyne.Container
+	intro      *widget.Label
+	progress   dialog.Dialog
+	bl         *beelite.Beelite
+	logger     *logger
+	beeVersion string
+	nodeConfig *nodeConfig
 }
 
 func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 	i := &index{
-		Window: w,
-		app:    a,
-		logger: &logger{},
+		Window:     w,
+		app:        a,
+		intro:      widget.NewLabel(""),
+		logger:     &logger{},
 		nodeConfig: &nodeConfig{},
 	}
+	i.intro.Wrapping = fyne.TextWrapWord
+
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		i.logger.Log("No build info found")
@@ -87,42 +92,28 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		}
 	}
 
-	i.nodeConfig.path = a.Storage().RootURI().Path()
-	i.title = widget.NewLabel("Swarm")
-	i.title.TextStyle.Bold = true
-	i.intro = widget.NewLabel("Initialise your swarm node with a strong password")
-	i.intro.Wrapping = fyne.TextWrapWord
-	content := container.NewStack()
+	i.nodeConfig.isKeyStoreMem = a.Driver().Device().IsBrowser()
+	if i.nodeConfig.isKeyStoreMem {
+		i.logger.Log("Running in browser, using in-memory keystore")
+	} else {
+		i.nodeConfig.path = a.Storage().RootURI().Path()
+	}
 
-	// check if any of the configuration is saved
-	savedPassword := i.app.Preferences().String(passwordPrefKey)
-	savedRPCEndpoint := i.app.Preferences().String(rpcEndpointPrefKey)
-	savedNATAddr := i.app.Preferences().String(natAddressPrefKey)
-	savedWelcomeMsg := i.app.Preferences().String(welcomeMessagePrefKey)
-	savedSwapEnable := i.app.Preferences().Bool(swapEnablePrefKey)
-	if savedPassword != "" &&
-		((savedSwapEnable && savedRPCEndpoint != "" ) ||
-		 !savedSwapEnable && savedRPCEndpoint == "") &&
-		savedNATAddr != "" &&
-		savedWelcomeMsg != "" {
-		go i.start(i.nodeConfig.path, savedPassword, savedWelcomeMsg, savedNATAddr, savedRPCEndpoint, savedSwapEnable)
-		content.Objects = []fyne.CanvasObject{
-			container.NewBorder(
-				widget.NewLabel(""),
-				widget.NewLabel(""),
-				widget.NewLabel(""),
-				widget.NewLabel(""),
-				widget.NewLabel("Please wait..."),
-			),
-		}
-		i.content = content
-		i.view = container.NewBorder(container.NewVBox(i.title, widget.NewSeparator(), i.intro), nil, nil, nil, content)
+	i.nodeConfig.password = i.getPreferenceString(passwordPrefKey)
+	if i.nodeConfig.password != "" && i.getPreferenceString(overlayAddrPrefKey) != "" {
+		i.nodeConfig.welcomeMessage = i.getPreferenceString(welcomeMessagePrefKey)
+		i.nodeConfig.natAddress = i.getPreferenceString(natAddressPrefKey)
+		i.nodeConfig.rpcEndpoint = i.getPreferenceString(rpcEndpointPrefKey)
+		i.nodeConfig.swapEnable = i.getPreferenceBool(swapEnablePrefKey)
+
+		i.view = container.NewBorder(container.NewVBox(i.intro), nil, nil, nil, container.NewStack(i.showStartView()))
+		i.view.Refresh()
 		return i.view
 	}
 
 	i.showPasswordView()
 
-	i.view = container.NewBorder(container.NewVBox(i.title, widget.NewSeparator(), i.intro), nil, nil, nil, i.content)
+	i.view = container.NewBorder(container.NewVBox(i.intro), nil, nil, nil, i.content)
 	return i.view
 }
 
@@ -133,65 +124,66 @@ func (i *index) start(path, password, welcomeMessage, natAddress, rpcEndpoint st
 	}
 	i.showProgressWithMessage("Starting Bee")
 
-	err := i.initSwarm(path, path, welcomeMessage, password, natAddress, rpcEndpoint, swapEnable)
+	err := i.initSwarm(path, welcomeMessage, password, natAddress, rpcEndpoint, swapEnable)
 	i.hideProgress()
 	if err != nil {
-		addr, addrErr := beelite.OverlayAddr(path, password)
-		if addrErr != nil {
-			i.showError(addrErr)
-			return
+		if i.bl != nil {
+			i.showErrorWithAddr(i.bl.OverlayEthAddress(), err)
+		} else {
+			i.showError(err)
 		}
-		i.showErrorWithAddr(addr, err)
 		return
 	}
 
 	if swapEnable {
-		if i.bl.BeeNodeMode != api.LightMode {
-			i.showError(fmt.Errorf("swap is enabled but the current node mode is: %s", i.bl.BeeNodeMode))
+		if i.bl.BeeNodeMode() != api.LightMode {
+			i.showError(fmt.Errorf("swap is enabled but the current node mode is: %s", i.bl.BeeNodeMode()))
 			return
 		}
-	} else if i.bl.BeeNodeMode != api.UltraLightMode {
-		i.showError(fmt.Errorf("swap disabled but the current node mode is: %s", i.bl.BeeNodeMode))
+	} else if i.bl.BeeNodeMode() != api.UltraLightMode {
+		i.showError(fmt.Errorf("swap disabled but the current node mode is: %s", i.bl.BeeNodeMode()))
 		return
 	}
 
-	i.app.Preferences().SetString(welcomeMessagePrefKey, welcomeMessage)
-	i.app.Preferences().SetBool(swapEnablePrefKey, swapEnable)
-	i.app.Preferences().SetString(natAddressPrefKey, natAddress)
-	i.app.Preferences().SetString(rpcEndpointPrefKey, rpcEndpoint)
+	i.setPreference(welcomeMessagePrefKey, welcomeMessage)
+	i.setPreference(swapEnablePrefKey, swapEnable)
+	i.setPreference(natAddressPrefKey, natAddress)
+	i.setPreference(rpcEndpointPrefKey, rpcEndpoint)
 	err = i.loadMenuView()
 	if err != nil {
 		i.showError(err)
 		return
 	}
 	i.intro.SetText("")
+	i.intro.Hide()
 }
 
-func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, natAddress, rpcEndpoint string, swapEnable bool) error {
+func (i *index) initSwarm(dataDir, welcomeMessage, password, natAddress, rpcEndpoint string, swapEnable bool) error {
 	i.logger.Log(welcomeMessage)
 	i.logger.Log(fmt.Sprintf("bee version: %s", i.beeVersion))
-	lo := &beelite.LiteOptions {
-		FullNodeMode:              false,
-		BootnodeMode:              false,
-		Bootnodes:                 MainnetBootnodes,
-		DataDir:                   dataDir,
-		WelcomeMessage:            welcomeMessage,
-		BlockchainRpcEndpoint:     rpcEndpoint,
-		SwapInitialDeposit:        "0",
-		PaymentThreshold:          "100000000",
-		SwapEnable:                swapEnable,
-		ChequebookEnable:          true,
-		UsePostageSnapshot:        false,
-		DebugAPIEnable:            true,
-		Mainnet:                   true,
-		NetworkID:                 MainnetNetworkID,
-		NATAddr:                   natAddress,
-		CacheCapacity:             32 * 1024 * 1024,
-		DBOpenFilesLimit:          50,
-		DBWriteBufferSize:         32 * 1024 * 1024,
-		DBBlockCacheCapacity:      32 * 1024 * 1024,
-		DBDisableSeeksCompaction:  false,
-		RetrievalCaching:          true,
+
+	lo := &beelite.LiteOptions{
+		FullNodeMode:             false,
+		BootnodeMode:             false,
+		Bootnodes:                MainnetBootnodes,
+		DataDir:                  dataDir,
+		WelcomeMessage:           welcomeMessage,
+		BlockchainRpcEndpoint:    rpcEndpoint,
+		SwapInitialDeposit:       "0",
+		PaymentThreshold:         "100000000",
+		SwapEnable:               swapEnable,
+		ChequebookEnable:         true,
+		UsePostageSnapshot:       false,
+		DebugAPIEnable:           true,
+		Mainnet:                  true,
+		NetworkID:                MainnetNetworkID,
+		NATAddr:                  natAddress,
+		CacheCapacity:            32 * 1024 * 1024,
+		DBOpenFilesLimit:         50,
+		DBWriteBufferSize:        32 * 1024 * 1024,
+		DBBlockCacheCapacity:     32 * 1024 * 1024,
+		DBDisableSeeksCompaction: false,
+		RetrievalCaching:         true,
 	}
 
 	bl, err := beelite.Start(lo, password, debugLogLevel)
@@ -199,23 +191,29 @@ func (i *index) initSwarm(keystore, dataDir, welcomeMessage, password, natAddres
 		return err
 	}
 
-	i.app.Preferences().SetString(passwordPrefKey, password)
+	i.setPreference(passwordPrefKey, password)
+	i.setPreference(overlayAddrPrefKey, bl.OverlayEthAddress().String())
 	i.bl = bl
 	return err
 }
 
 func (i *index) loadMenuView() error {
-	// only show certain views if the node mode is NOT ultra light
-	showUpload := i.bl.BeeNodeMode != api.UltraLightMode
-	infoCard := i.showInfoCard(showUpload)
-	uploadCard := i.showUploadCard(showUpload)
+	// only show certain views if the node mode is NOT ultra-light
+	ultraLightMode := i.bl.BeeNodeMode() == api.UltraLightMode
+	infoCard := i.showInfoCard(ultraLightMode)
+	menuContent := container.NewGridWithColumns(1, infoCard)
+	if !ultraLightMode {
+		uploadCard := i.showUploadCard()
+		menuContent.Add(uploadCard)
+	}
 	downloadCard := i.showDownloadCard()
+	menuContent.Add(downloadCard)
 	i.content.Objects = []fyne.CanvasObject{container.NewBorder(
 		nil,
 		nil,
 		nil,
 		nil,
-		container.NewScroll(container.NewGridWithColumns(1, infoCard, uploadCard, downloadCard))),
+		container.NewScroll(menuContent)),
 	}
 	i.content.Refresh()
 	return nil

@@ -29,12 +29,14 @@ func (i *index) showError(err error) {
 	d.Show()
 }
 
-func (i *index) showErrorWithAddr(addr common.Address, err error) {
-	addrStr := shortenHashOrAddress(addr.String())
-	addrCopyButton := widget.NewButtonWithIcon("   Copy    ", theme.ContentCopyIcon(), func() {
-		i.Window.Clipboard().SetContent(addr.String())
+func (i *index) copyButton(s string) *widget.Button {
+	return widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
+		i.Window.Clipboard().SetContent(s)
 	})
-	header := container.NewHBox(widget.NewLabel(addrStr), addrCopyButton)
+}
+
+func (i *index) showErrorWithAddr(addr common.Address, err error) {
+	header := container.NewHBox(widget.NewLabel(shortenHashOrAddress(addr.String())), i.copyButton(addr.String()))
 	label := widget.NewLabel(err.Error())
 	label.Wrapping = fyne.TextWrapWord
 	content := container.NewBorder(header, label, nil, nil)
@@ -49,8 +51,45 @@ func shortenHashOrAddress(item string) string {
 }
 
 func (i *index) refDialog(ref string) fyne.CanvasObject {
-	refButton := widget.NewButtonWithIcon("   Copy    ", theme.ContentCopyIcon(), func() {
-		i.Window.Clipboard().SetContent(ref)
-	})
-	return container.NewStack(container.NewBorder(nil, nil, nil, refButton, widget.NewLabel(shortenHashOrAddress(ref))))
+	return container.NewStack(container.NewBorder(nil, nil, nil, i.copyButton(ref), widget.NewLabel(shortenHashOrAddress(ref))))
+}
+
+func (i *index) getPreferenceString(key string) string {
+	if !i.nodeConfig.isKeyStoreMem {
+		return i.app.Preferences().String(key)
+	}
+	return ""
+}
+
+func (i *index) getPreferenceBool(key string) bool {
+	if !i.nodeConfig.isKeyStoreMem {
+		return i.app.Preferences().Bool(key)
+	}
+	return false
+}
+
+func (i *index) setPreference(key string, value interface{}) {
+	if !i.nodeConfig.isKeyStoreMem {
+		switch valueType := value.(type) {
+		case string:
+			i.app.Preferences().SetString(key, valueType)
+		case []string:
+			i.app.Preferences().SetStringList(key, valueType)
+		case bool:
+			i.app.Preferences().SetBool(key, valueType)
+		case []bool:
+			i.app.Preferences().SetBoolList(key, valueType)
+		case int:
+			i.app.Preferences().SetInt(key, valueType)
+		case []int:
+			i.app.Preferences().SetIntList(key, valueType)
+		case float64:
+			i.app.Preferences().SetFloat(key, valueType)
+		case []float64:
+			i.app.Preferences().SetFloatList(key, valueType)
+		case nil:
+		default:
+			i.logger.Log(fmt.Sprintf("Invalid type for preference: %T", value))
+		}
+	}
 }

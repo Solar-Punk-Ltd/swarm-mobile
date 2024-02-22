@@ -14,9 +14,7 @@ import (
 
 func (i *index) showDownloadCard() *widget.Card {
 	dlForm := i.downloadForm()
-	downloadCard := widget.NewCard("Download", "download content from swarm", dlForm)
-
-	return downloadCard
+	return widget.NewCard("Download", "download content from swarm", dlForm)
 }
 
 func (i *index) downloadForm() *widget.Form {
@@ -40,7 +38,7 @@ func (i *index) downloadForm() *widget.Form {
 					i.showError(err)
 					return
 				}
-				hash.Text = ""
+				hash.SetText("")
 				data, err := io.ReadAll(ref)
 				if err != nil {
 					i.hideProgress()
@@ -66,7 +64,6 @@ func (i *index) downloadForm() *widget.Form {
 				saveFile.SetFileName(fileName)
 				saveFile.Show()
 			}()
-
 		},
 	}
 
