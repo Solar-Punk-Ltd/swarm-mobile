@@ -80,8 +80,8 @@ github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go
 github.com/Microsoft/go-winio v0.6.1 h1:9/kr64B9VUZrLm5YYwbGtUJnMgqWVOdUAXu6Migciow=
 github.com/Microsoft/go-winio v0.6.1/go.mod h1:LRdKpFKfdobln8UmuiYcKPot9D2v6svN5+sAH+4kjUM=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
-github.com/Solar-Punk-Ltd/bee-lite v0.0.2 h1:9BsW67shYNQhvRa/YuAHc51uEopdCb2z42HwH0OV0fA=
-github.com/Solar-Punk-Ltd/bee-lite v0.0.2/go.mod h1:jhJREB6Q7b8Mmyk7Ws11fi60gVNyUVZ1UnCiUXqbc1Y=
+github.com/Solar-Punk-Ltd/bee-lite v0.0.3 h1:lEy2mxwvGlmLPVXEZzl8jvNxbP5Iye2TMOfnhNI8RIo=
+github.com/Solar-Punk-Ltd/bee-lite v0.0.3/go.mod h1:jhJREB6Q7b8Mmyk7Ws11fi60gVNyUVZ1UnCiUXqbc1Y=
 github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6/go.mod h1:3eOhrUMpNV+6aFIbp5/iudMxNCF27Vw2OZgy4xEx0Fg=
 github.com/VictoriaMetrics/fastcache v1.6.0/go.mod h1:0qHz5QP0GMX4pfmMA/zt5RgfNuXJrTP0zS7DqpHGGTw=
 github.com/VictoriaMetrics/fastcache v1.12.1 h1:i0mICQuojGDL3KblA7wUNlY5lOK6a4bwt3uRKnkZU40=

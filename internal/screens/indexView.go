@@ -3,7 +3,6 @@ package screens
 import (
 	"fmt"
 	"log"
-	"runtime/debug"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -66,7 +65,6 @@ type index struct {
 	progress   dialog.Dialog
 	bl         *beelite.Beelite
 	logger     *logger
-	beeVersion string
 	nodeConfig *nodeConfig
 }
 
@@ -79,24 +77,14 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		nodeConfig: &nodeConfig{},
 	}
 	i.intro.Wrapping = fyne.TextWrapWord
-
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		i.logger.Log("No build info found")
-		i.beeVersion = "unknown"
-	} else {
-		for _, dep := range info.Deps {
-			if dep.Path == "github.com/ethersphere/bee" {
-				i.beeVersion = dep.Version
-			}
-		}
-	}
+	i.printAppInfo()
 
 	i.nodeConfig.isKeyStoreMem = a.Driver().Device().IsBrowser()
 	if i.nodeConfig.isKeyStoreMem {
 		i.logger.Log("Running in browser, using in-memory keystore")
 	} else {
 		i.nodeConfig.path = a.Storage().RootURI().Path()
+		i.logger.Log("App datadir path: " + i.nodeConfig.path)
 	}
 
 	i.nodeConfig.password = i.getPreferenceString(passwordPrefKey)
@@ -106,7 +94,7 @@ func Make(a fyne.App, w fyne.Window) fyne.CanvasObject {
 		i.nodeConfig.rpcEndpoint = i.getPreferenceString(rpcEndpointPrefKey)
 		i.nodeConfig.swapEnable = i.getPreferenceBool(swapEnablePrefKey)
 
-		i.view = container.NewBorder(container.NewVBox(i.intro), nil, nil, nil, container.NewStack(i.showStartView()))
+		i.view = container.NewBorder(container.NewVBox(i.intro), nil, nil, nil, container.NewStack(i.showStartView(false)))
 		i.view.Refresh()
 		return i.view
 	}
@@ -149,18 +137,13 @@ func (i *index) start(path, password, welcomeMessage, natAddress, rpcEndpoint st
 	i.setPreference(swapEnablePrefKey, swapEnable)
 	i.setPreference(natAddressPrefKey, natAddress)
 	i.setPreference(rpcEndpointPrefKey, rpcEndpoint)
-	err = i.loadMenuView()
-	if err != nil {
-		i.showError(err)
-		return
-	}
+	i.loadMenuView()
 	i.intro.SetText("")
 	i.intro.Hide()
 }
 
 func (i *index) initSwarm(dataDir, welcomeMessage, password, natAddress, rpcEndpoint string, swapEnable bool) error {
 	i.logger.Log(welcomeMessage)
-	i.logger.Log(fmt.Sprintf("bee version: %s", i.beeVersion))
 
 	lo := &beelite.LiteOptions{
 		FullNodeMode:             false,
@@ -197,7 +180,7 @@ func (i *index) initSwarm(dataDir, welcomeMessage, password, natAddress, rpcEndp
 	return err
 }
 
-func (i *index) loadMenuView() error {
+func (i *index) loadMenuView() {
 	// only show certain views if the node mode is NOT ultra-light
 	ultraLightMode := i.bl.BeeNodeMode() == api.UltraLightMode
 	infoCard := i.showInfoCard(ultraLightMode)
@@ -216,5 +199,4 @@ func (i *index) loadMenuView() error {
 		container.NewScroll(menuContent)),
 	}
 	i.content.Refresh()
-	return nil
 }

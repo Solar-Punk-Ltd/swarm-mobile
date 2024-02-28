@@ -43,7 +43,6 @@ func (i *index) showPasswordView() fyne.CanvasObject {
 	i.content = content
 	i.view = container.NewBorder(container.NewVBox(i.intro), nil, nil, nil, content)
 	i.view.Refresh()
-
 	return content
 }
 
@@ -160,7 +159,7 @@ func (i *index) showNATAddressView() fyne.CanvasObject {
 		if i.nodeConfig.swapEnable {
 			content.Objects = []fyne.CanvasObject{i.showRPCView()}
 		} else {
-			content.Objects = []fyne.CanvasObject{i.showStartView()}
+			content.Objects = []fyne.CanvasObject{i.showStartView(true)}
 		}
 
 		content.Refresh()
@@ -210,7 +209,7 @@ func (i *index) showRPCView() fyne.CanvasObject {
 			}
 			i.nodeConfig.rpcEndpoint = rpcEntry.Text
 		}
-		content.Objects = []fyne.CanvasObject{i.showStartView()}
+		content.Objects = []fyne.CanvasObject{i.showStartView(true)}
 		content.Refresh()
 	})
 
@@ -228,7 +227,7 @@ func (i *index) showRPCView() fyne.CanvasObject {
 	return content
 }
 
-func (i *index) showStartView() fyne.CanvasObject {
+func (i *index) showStartView(firstStart bool) fyne.CanvasObject {
 	i.intro.SetText("Start your Swarm node")
 	i.intro.TextStyle.Bold = true
 	content := container.NewStack()
@@ -289,12 +288,14 @@ func (i *index) showStartView() fyne.CanvasObject {
 
 	bottomBox := container.NewVBox()
 	if overlayAddr != "" {
-		infoLabel := widget.NewLabel(fmt.Sprintf("Warning: cannot continue in light-mode until there is at least min %s (for Gas) and at least min %s available on address %s",
+		infoLabel := widget.NewLabel(fmt.Sprintf("Warning: cannot continue in light-mode until there is\nat least min %s (for Gas) and at least min %s available on\n address: %s",
 			NativeTokenSymbol, SwarmTokenSymbol, shortenHashOrAddress(overlayAddr)))
 		bottomBox.Add(infoLabel)
 		bottomBox.Add(i.copyButton(overlayAddr))
 	}
-	bottomBox.Add(backButton)
+	if firstStart {
+		bottomBox.Add(backButton)
+	}
 
 	advancedView := i.showAdvancedSettings()
 	content.Objects = []fyne.CanvasObject{container.NewBorder(startButton, bottomBox, advancedView, nil)}

@@ -121,7 +121,7 @@ func (i *index) uploadForm() *widget.Form {
 				return
 			}
 			i.setPreference(uploadsPrefKey, string(data))
-			d := dialog.NewCustomConfirm("Upload successful", "Ok", "Cancel", i.refDialog(ref.String()), func(b bool) {}, i.Window)
+			d := dialog.NewCustomConfirm("Upload successful", "Ok", "Cancel", i.copyDialog(shortenHashOrAddress(ref.String()), ref.String()), func(b bool) {}, i.Window)
 			i.hideProgress()
 			d.Show()
 		}()

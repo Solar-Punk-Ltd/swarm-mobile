@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	fyne.io/fyne/v2 v2.4.3
-	github.com/Solar-Punk-Ltd/bee-lite v0.0.2
+	github.com/Solar-Punk-Ltd/bee-lite v0.0.3
 	github.com/ethereum/go-ethereum v1.13.4
 	github.com/ethersphere/bee v1.18.2
 )

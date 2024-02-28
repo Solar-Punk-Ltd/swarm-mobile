@@ -30,6 +30,10 @@ func (i *index) downloadForm() *widget.Form {
 				i.showError(err)
 				return
 			}
+			if hash.Text == "" {
+				i.showError(fmt.Errorf("please enter a hash"))
+				return
+			}
 			go func() {
 				i.showProgressWithMessage(fmt.Sprintf("Downloading %s", shortenHashOrAddress(hash.Text)))
 				ref, fileName, err := i.bl.GetBzz(context.Background(), dlAddr)
