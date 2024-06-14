@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	beelite "github.com/Solar-Punk-Ltd/bee-lite"
-	"github.com/ethersphere/bee/pkg/api"
+	"github.com/ethersphere/bee/v2/pkg/api"
 )
 
 const (

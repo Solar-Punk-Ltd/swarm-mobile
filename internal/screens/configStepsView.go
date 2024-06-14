@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethersphere/bee/pkg/api"
+	"github.com/ethersphere/bee/v2/pkg/api"
 )
 
 type nodeConfig struct {

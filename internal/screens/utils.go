@@ -44,7 +44,7 @@ func (i *index) printAppInfo() {
 		i.app.Metadata().Custom["beeliteVersion"] = "unknown"
 	} else {
 		for _, dep := range info.Deps {
-			if dep.Path == "github.com/ethersphere/bee" {
+			if dep.Path == "github.com/ethersphere/bee/v2" {
 				i.app.Metadata().Custom["beeVersion"] = dep.Version
 			} else if dep.Path == "github.com/Solar-Punk-Ltd/bee-lite" {
 				i.app.Metadata().Custom["beeliteVersion"] = dep.Version

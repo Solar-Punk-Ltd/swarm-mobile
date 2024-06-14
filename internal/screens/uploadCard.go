@@ -92,7 +92,7 @@ func (i *index) uploadForm() *widget.Form {
 			filename := path.Text
 			i.logger.Log(fmt.Sprintf("stamp selected: %s", batchID))
 			i.showProgressWithMessage(fmt.Sprintf("Uploading %s", filename))
-			ref, err := i.bl.AddFileBzz(context.Background(), batchID, filename, mimetype, false, file)
+			ref, err := i.bl.AddFileBzz(context.Background(), batchID, filename, mimetype, false, 0, file)
 			if err != nil {
 				i.hideProgress()
 				i.showError(err)
