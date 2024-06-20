@@ -6,7 +6,7 @@ SwarmMobile is a bee client built with [fyne](https://fyne.io/) using [bee-lite]
 
 To Build from source you will need **fyne**.
 ```
-make get-fnye
+make get-fyne
 ```
 
 Also necessary to install the **android ndk** and set the following environment variables.
