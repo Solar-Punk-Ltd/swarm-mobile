@@ -22,8 +22,9 @@ const (
 	defaultRPC            = "https://gnosis.publicnode.com"
 	defaultWelcomeMsg     = "Welcome from Swarm Mobile by Solar Punk"
 	debugLogLevel         = "4"
-	defaultDepth          = "17"
-	defaultAmount         = "100000000"
+	defaultDepth          = "21"
+	defaultAmount         = "500000000"
+	defaultImmutable      = true
 	passwordPrefKey       = "password"
 	welcomeMessagePrefKey = "welcomeMessage"
 	swapEnablePrefKey     = "swapEnable"

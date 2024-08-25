@@ -14,8 +14,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-const defaultImmutable = true
-
 func (i *index) showInfoCard(ultraLightMode bool) *widget.Card {
 	addressContent := i.addressContent()
 	walletDataButton := i.walletDataButton()
