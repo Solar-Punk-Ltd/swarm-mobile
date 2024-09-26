@@ -21,7 +21,7 @@ const (
 	SwarmTokenSymbol      = "xBZZ"
 	defaultRPC            = "https://gnosis.publicnode.com"
 	defaultWelcomeMsg     = "Welcome from Swarm Mobile by Solar Punk"
-	debugLogLevel         = "4"
+	infoLogLevel          = "3"
 	defaultDepth          = "21"
 	defaultAmount         = "500000000"
 	defaultImmutable      = true
@@ -158,7 +158,6 @@ func (i *index) initSwarm(dataDir, welcomeMessage, password, natAddress, rpcEndp
 		SwapEnable:               swapEnable,
 		ChequebookEnable:         true,
 		UsePostageSnapshot:       false,
-		DebugAPIEnable:           true,
 		Mainnet:                  true,
 		NetworkID:                MainnetNetworkID,
 		NATAddr:                  natAddress,
@@ -170,7 +169,7 @@ func (i *index) initSwarm(dataDir, welcomeMessage, password, natAddress, rpcEndp
 		RetrievalCaching:         true,
 	}
 
-	bl, err := beelite.Start(lo, password, debugLogLevel)
+	bl, err := beelite.Start(lo, password, infoLogLevel)
 	if err != nil {
 		return err
 	}

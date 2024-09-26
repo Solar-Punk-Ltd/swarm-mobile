@@ -36,7 +36,7 @@ func (i *index) downloadForm() *widget.Form {
 			}
 			go func() {
 				i.showProgressWithMessage(fmt.Sprintf("Downloading %s", shortenHashOrAddress(hash.Text)))
-				ref, fileName, err := i.bl.GetBzz(context.Background(), dlAddr)
+				ref, fileName, err := i.bl.GetBzz(context.Background(), dlAddr, nil, nil, nil)
 				if err != nil {
 					i.hideProgress()
 					i.showError(err)

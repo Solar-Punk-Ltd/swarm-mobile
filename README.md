@@ -44,9 +44,15 @@ go run -tags mobile main.go
 In order for the android networking to work:
 Copy the **_android** files under the **net/** and **syscall/** subfolders of this repo to their respective folders under your go installation, e.g.:
 ```bash
-cp ./net/* /opt/homebrew/Cellar/go/1.22.0/libexec/src/net/
-cp ./syscall/* /opt/homebrew/Cellar/go/1.22.0/libexec/src/syscall/
+cp ./net/* /opt/homebrew/Cellar/go/1.22.4/libexec/src/net/
+cp ./syscall/* /opt/homebrew/Cellar/go/1.22.4/libexec/src/syscall/
 ```
+Furthermore, add the following build directive to the existing dnsconfig_unix, interface_linux, netlink_linux files:
+```go
+//go:build !android
+```
+so that the target will be the newly added *_android files.
+
 Based on the following github issues:
 [dnsconfig_unix.go](https://github.com/golang/go/issues/8877)
 [netlink_linux.go, interface_linux.go](https://github.com/golang/go/issues/40569)
@@ -79,6 +85,9 @@ fyne package --help
 ```
 
 ## TODO
-- [ ] release for testnet and mainnet
-- [ ] host binaries
-- [ ] code review
+- [X] release for testnet and mainnet
+- [X] code review
+- [X] use latest bee-lite version
+- [X] fix networking on errors on Android
+- [X] host binaries for Android
+- [ ] host binaries for IOS

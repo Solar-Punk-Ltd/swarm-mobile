@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+	"github.com/ethersphere/bee/v2/pkg/swarm"
 )
 
 type uploadedItem struct {
@@ -92,7 +93,7 @@ func (i *index) uploadForm() *widget.Form {
 			filename := path.Text
 			i.logger.Log(fmt.Sprintf("stamp selected: %s", batchID))
 			i.showProgressWithMessage(fmt.Sprintf("Uploading %s", filename))
-			ref, err := i.bl.AddFileBzz(context.Background(), batchID, filename, mimetype, false, 0, file)
+			ref, _, err := i.bl.AddFileBzz(context.Background(), batchID, filename, mimetype, false, swarm.ZeroAddress, false, 0, file)
 			if err != nil {
 				i.hideProgress()
 				i.showError(err)

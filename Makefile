@@ -6,7 +6,7 @@ GOLANGCI_LINT_VERSION ?= v1.56.2
 APP_ID ?= com.solarpunk.swarmmobile
 APP_NAME ?= swarm-mobile
 BUILD_NUMBER ?= 1
-RELEASE ?= false
+RELEASE ?= true
 TARGET_OS ?= android/arm64
 APP_VERSION ?= "$(shell git describe --tags --abbrev=0 | cut -c2-)"
 COMMIT_HASH ?= "$(shell git describe --long --dirty --always --match "" || true)"
