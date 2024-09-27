@@ -6,12 +6,10 @@ toolchain go1.22.4
 
 require (
 	fyne.io/fyne/v2 v2.4.3
-	github.com/Solar-Punk-Ltd/bee-lite v0.0.4
+	github.com/Solar-Punk-Ltd/bee-lite v0.0.5
 	github.com/ethereum/go-ethereum v1.14.3
 	github.com/ethersphere/bee/v2 v2.2.0
 )
-
-replace github.com/Solar-Punk-Ltd/bee-lite => ../../solarpunk/bee-lite
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2 // indirect
