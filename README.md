@@ -24,8 +24,8 @@ On macOS with M chip it TARGET_OS should be darwin
 To overwrite them set the following environment variables:
 
 ```bash
-export APP_ID=<app-id>
-export TARGET_OS=<target-os>
+export APP_ID=com.solarpunk.swarmmobile
+export TARGET_OS=darwin
 ```
 
 To create a package:
@@ -35,6 +35,8 @@ make package
 ```
 
 ## Development
+
+> Recommended to use goenv as go version manager tool
 
 To run without packaging on your local development environment:
 
@@ -48,25 +50,41 @@ If you wish to **simulate a mobile** application:
 go run -tags mobile main.go
 ```
 
-In order for the android networking to work:
-Copy the **\_android** files under the **net/** and **syscall/** subfolders of this repo to their respective folders under your go installation, e.g.:
+## Development for Android
 
-```bash
-cp ./net/* /opt/homebrew/Cellar/go/1.22.4/libexec/src/net/
-cp ./syscall/* /opt/homebrew/Cellar/go/1.22.4/libexec/src/syscall/
-```
-
-Furthermore, add the following build directive to the existing dnsconfig_unix, interface_linux, netlink_linux files:
-
-```go
-//go:build !android
-```
-
-so that the target will be the newly added \*\_android files.
+Android has networking restrictions since API 30+ so to make [libp2p work](https://github.com/libp2p/go-libp2p/issues/1956) tweaks required on the Go repository that will be used to compile this code (or [bee-lite](https://github.com/Solar-Punk-Ltd/bee-lite/) ).
 
 Based on the following github issues:
 [dnsconfig_unix.go](https://github.com/golang/go/issues/8877)
 [netlink_linux.go, interface_linux.go](https://github.com/golang/go/issues/40569)
+
+1. Copy the **\_android** files under the **net/** and **syscall/** subfolders of this repo to their respective folders under your go installation, e.g.:
+
+   ```bash
+   cp ./net/* /Users/username/.goenv/versions/1.24.2/src/net/
+   cp ./syscall/* /Users/username/.goenv/versions/1.24.2/src/syscall/
+   ```
+
+2. Furthermore, add the following build directive to the existing dnsconfig_unix, interface_linux, netlink_linux files:
+
+   ```go
+   //go:build !android
+   ```
+
+   or if a windows exclusion exists add android like
+
+   ```go
+   //go:build !windows && !android
+   ```
+
+3. To make these changes effect you should recompile the go binaries from the modified sources above - with the newly added \*\_android files .
+
+   For this go to source folder root /Users/username/.goenv/versions/1.24.2/src/ for example.
+   Search for make.bash and open it.
+   Search for 'bootgo' in this file.
+   That version is required to compile the target Go version.
+   Install it and point GOROOT_BOOTSTRAP to that GOROOT like GOROOT_BOOTSTRAP=/Users/username/.goenv/versions/1.22.6 on Mac.
+   After this run make.bash and it should compile the distro
 
 ### Debugging on Android
 
@@ -77,7 +95,11 @@ Then on your computer **adb** needs to be installed. Use the following script to
 ```bash
 DEVICE_ID=$(adb devices | awk 'FNR == 2 {print $1}')
 echo "device ID: ${DEVICE_ID}"
-adb logcat -v color time Fyne:V *:S ${DEVICE_ID} > swarm_mobile.log
+#tail logs
+adb -s ${DEVICE_ID} logcat -v color time Fyne:V "*:S"
+
+# or into file
+adb -s ${DEVICE_ID} logcat -v color time Fyne:V "*:S" > swarm_mobile.log
 ```
 
 ## Run in the browser
