@@ -21,8 +21,8 @@ linter:
 
 .PHONY: get-fyne
 get-fyne:
-	go get fyne.io/fyne/v2/cmd/fyne@v2.4.3
+	go get fyne.io/fyne/v2/cmd/fyne@latest
 
 .PHONY: package
 package:
-	fyne package -os ${TARGET_OS} -app-id ${APP_ID} -name ${APP_NAME}  -app-version ${APP_VERSION} -app-build=${BUILD_NUMBER} -release=${RELEASE} -metadata commithash=${COMMIT_HASH}
+	fyne package -os ${TARGET_OS} -appID ${APP_ID} -name ${APP_NAME}  -appVersion ${APP_VERSION} -appBuild=${BUILD_NUMBER} -release=${RELEASE} -metadata commithash=${COMMIT_HASH}
