@@ -1,6 +1,6 @@
 # swarm-mobile
 
-SwarmMobile is a bee client built with [fyne](https://fyne.io/) using [bee-lite](https://github.com/onepeerlabs/bee-lite). It can run on multiple platforms supported by fyne.
+SwarmMobile is a bee client built with [fyne](https://fyne.io/) using [bee-lite](https://github.com/Solar-Punk-Ltd/bee-lite). It can run on multiple platforms supported by fyne.
 
 ## Build guide
 
