@@ -19,8 +19,8 @@ lint: linter
 linter:
 	test -f $(GOLANGCI_LINT) || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$($(GO) env GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 
-.PHONY: get-fnye
-get-fnye:
+.PHONY: get-fyne
+get-fyne:
 	go get fyne.io/fyne/v2/cmd/fyne@latest
 
 .PHONY: package
