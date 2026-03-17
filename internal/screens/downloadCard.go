@@ -34,15 +34,18 @@ func (i *index) downloadForm() *widget.Form {
 				i.showError(fmt.Errorf("please enter a hash"))
 				return
 			}
+			hashText := hash.Text
 			go func() {
-				i.showProgressWithMessage(fmt.Sprintf("Downloading %s", shortenHashOrAddress(hash.Text)))
+				i.showProgressWithMessage(fmt.Sprintf("Downloading %s", shortenHashOrAddress(hashText)))
 				ref, fileName, err := i.bl.GetBzz(context.Background(), dlAddr, nil, nil, nil)
 				if err != nil {
 					i.hideProgress()
 					i.showError(err)
 					return
 				}
-				hash.SetText("")
+				fyne.Do(func() {
+					hash.SetText("")
+				})
 				data, err := io.ReadAll(ref)
 				if err != nil {
 					i.hideProgress()
@@ -50,23 +53,25 @@ func (i *index) downloadForm() *widget.Form {
 					return
 				}
 				i.hideProgress()
-				saveFile := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
-					if err != nil {
-						i.showError(err)
-						return
-					}
-					if writer == nil {
-						return
-					}
-					_, err = writer.Write(data)
-					if err != nil {
-						i.showError(err)
-						return
-					}
-					writer.Close()
-				}, i.Window)
-				saveFile.SetFileName(fileName)
-				saveFile.Show()
+				fyne.Do(func() {
+					saveFile := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+						if err != nil {
+							i.showError(err)
+							return
+						}
+						if writer == nil {
+							return
+						}
+						_, err = writer.Write(data)
+						if err != nil {
+							i.showError(err)
+							return
+						}
+						writer.Close()
+					}, i.Window)
+					saveFile.SetFileName(fileName)
+					saveFile.Show()
+				})
 			}()
 		},
 	}
