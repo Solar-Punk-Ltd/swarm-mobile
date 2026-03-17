@@ -72,21 +72,29 @@ func (i *index) printAppInfo() {
 }
 
 func (i *index) showProgressWithMessage(message string) {
-	i.progress = dialog.NewCustomWithoutButtons(message, widget.NewProgressBarInfinite(), i)
-	i.progress.Show()
+	fyne.Do(func() {
+		i.progress = dialog.NewCustomWithoutButtons(message, widget.NewProgressBarInfinite(), i)
+		i.progress.Show()
+	})
 }
 
 func (i *index) hideProgress() {
-	i.progress.Hide()
+	fyne.Do(func() {
+		if i.progress != nil {
+			i.progress.Hide()
+		}
+	})
 }
 
 func (i *index) showError(err error) {
-	label := widget.NewLabel(err.Error())
-	label.Wrapping = fyne.TextWrapWord
-	d := dialog.NewCustom("Error", "       Close       ", label, i.Window)
-	parentSize := i.Window.Canvas().Size()
-	d.Resize(fyne.NewSize(parentSize.Width*90/100, 0))
-	d.Show()
+	fyne.Do(func() {
+		label := widget.NewLabel(err.Error())
+		label.Wrapping = fyne.TextWrapWord
+		d := dialog.NewCustom("Error", "       Close       ", label, i.Window)
+		parentSize := i.Window.Canvas().Size()
+		d.Resize(fyne.NewSize(parentSize.Width*90/100, 0))
+		d.Show()
+	})
 }
 
 func (i *index) copyButton(s string) *widget.Button {
@@ -96,14 +104,16 @@ func (i *index) copyButton(s string) *widget.Button {
 }
 
 func (i *index) showErrorWithAddr(addr common.Address, err error) {
-	header := container.NewHBox(widget.NewLabel(shortenHashOrAddress(addr.String())), i.copyButton(addr.String()))
-	label := widget.NewLabel(err.Error())
-	label.Wrapping = fyne.TextWrapWord
-	content := container.NewBorder(header, label, nil, nil)
-	d := dialog.NewCustom("Error", "       Close       ", content, i.Window)
-	parentSize := i.Window.Canvas().Size()
-	d.Resize(fyne.NewSize(parentSize.Width*90/100, 0))
-	d.Show()
+	fyne.Do(func() {
+		header := container.NewHBox(widget.NewLabel(shortenHashOrAddress(addr.String())), i.copyButton(addr.String()))
+		label := widget.NewLabel(err.Error())
+		label.Wrapping = fyne.TextWrapWord
+		content := container.NewBorder(header, label, nil, nil)
+		d := dialog.NewCustom("Error", "       Close       ", content, i.Window)
+		parentSize := i.Window.Canvas().Size()
+		d.Resize(fyne.NewSize(parentSize.Width*90/100, 0))
+		d.Show()
+	})
 }
 
 func shortenHashOrAddress(item string) string {

@@ -35,7 +35,9 @@ func (i *index) showInfoCard(ultraLightMode bool) *widget.Card {
 		for {
 			time.Sleep(time.Second * 5)
 			if i.bl != nil {
-				infoCard.SetSubTitle(fmt.Sprintf("Connected with %d peers", i.bl.ConnectedPeerCount()))
+				fyne.Do(func() {
+					infoCard.SetSubTitle(fmt.Sprintf("Connected with %d peers", i.bl.ConnectedPeerCount()))
+				})
 			}
 		}
 	}()
